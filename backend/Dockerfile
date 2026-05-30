@@ -3,6 +3,9 @@
 # ==========================================
 FROM node:20-alpine AS builder
 
+# Install OpenSSL and compat libraries for Prisma engine compatibility in Alpine
+RUN apk add --no-cache openssl libc6-compat
+
 WORKDIR /app
 
 # Install package dependencies
@@ -24,6 +27,9 @@ RUN npm run build
 # STAGE 2: Production Runtime Stage
 # ==========================================
 FROM node:20-alpine AS runner
+
+# Install OpenSSL and compat libraries for Prisma engine compatibility in Alpine
+RUN apk add --no-cache openssl libc6-compat
 
 WORKDIR /app
 
