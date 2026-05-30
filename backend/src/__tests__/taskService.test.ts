@@ -14,6 +14,9 @@ const mockPrisma = {
   taskStatusHistory: {
     create: jest.fn(),
   },
+  notification: {
+    create: jest.fn(),
+  },
   $transaction: jest.fn((arg: any) => {
     if (Array.isArray(arg)) {
       return Promise.all(arg);
@@ -22,9 +25,24 @@ const mockPrisma = {
   }),
 };
 
+const mockRedis = {
+  publish: jest.fn(),
+  del: jest.fn(),
+  get: jest.fn(),
+  set: jest.fn(),
+  sadd: jest.fn(),
+  smembers: jest.fn(),
+};
+
 jest.unstable_mockModule('../config/prisma.js', () => ({
   __esModule: true,
   default: mockPrisma,
+}));
+
+jest.unstable_mockModule('../config/redis.js', () => ({
+  __esModule: true,
+  default: mockRedis,
+  redis: mockRedis,
 }));
 
 const { default: prisma } = await import('../config/prisma.js');
@@ -168,6 +186,7 @@ describe('TaskService Critical Workflows', () => {
       (prisma.task.findUnique as any).mockResolvedValue(task);
       (prisma.task.update as any).mockResolvedValue(expectedUpdatedTask);
       (prisma.taskStatusHistory.create as any).mockResolvedValue({});
+      (prisma.notification.create as any).mockResolvedValue({});
 
       const updated = await TaskService.updateTaskStatus(org.id, member.id, Role.MEMBER, task.id, TaskStatus.IN_PROGRESS);
 

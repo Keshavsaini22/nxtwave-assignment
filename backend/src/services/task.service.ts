@@ -3,6 +3,7 @@ import { Role, Task, TaskStatus, Priority } from '@prisma/client';
 import { AppError } from '../middlewares/error.middleware.js';
 import { TaskStateFactory } from './states/taskState.js';
 import { TaskCacheService } from './taskCache.service.js';
+import { NotificationService } from './notification.service.js';
 
 export class TaskService {
   public static async createTask(
@@ -252,24 +253,29 @@ export class TaskService {
     const [updatedTask] = await prisma.$transaction([
       prisma.task.update({
         where: { id: taskId },
-      	data: {
+        data: {
           status: newStatus,
           ...(newStatus === TaskStatus.DONE && { completedAt: new Date() }),
           ...(newStatus !== TaskStatus.DONE && { completedAt: null }),
-      	},
+        },
       }),
       prisma.taskStatusHistory.create({
-      	data: {
+        data: {
           taskId,
           userId,
           fromStatus: task.status,
           toStatus: newStatus,
-      	},
+        },
       }),
     ]);
 
     if (updatedTask.assigneeId) {
       await TaskCacheService.invalidateAssigneeCache(updatedTask.assigneeId);
+      await NotificationService.createAndPublishNotification(
+        updatedTask.assigneeId,
+        'Task Status Updated',
+        `Your task "${updatedTask.title}" has been updated from ${task.status} to ${updatedTask.status}.`
+      );
     }
 
     return updatedTask;

@@ -59,7 +59,6 @@ paths:
                   example: user@example.com
                 password:
                   type: string
-                  minimum: 8
                   example: securepassword123
                 role:
                   type: string
@@ -266,7 +265,6 @@ paths:
                   example: employee@acme.com
                 password:
                   type: string
-                  minimum: 8
                   example: TempPassword123!
                 role:
                   type: string
@@ -276,7 +274,7 @@ paths:
         '201':
           description: Tenant user provisioned successfully
         '400':
-          description: Validation error or invalid provisioning role (e.g. trying to create an ADMIN)
+          description: Validation error or invalid provisioning role
         '401':
           description: Missing or expired token
         '403':
@@ -543,6 +541,304 @@ paths:
           description: Missing or expired token
         '404':
           description: Project not found
+
+  /tasks:
+    post:
+      summary: Create a new task (ADMIN and MANAGER only)
+      description: Creates a new task within a project. Gated by project membership constraints.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - projectId
+              properties:
+                title:
+                  type: string
+                  example: Implement Redis Cache
+                description:
+                  type: string
+                  example: Set up O(1) set-tracking task list caching.
+                priority:
+                  type: string
+                  enum: [LOW, MEDIUM, HIGH]
+                  example: HIGH
+                projectId:
+                  type: string
+                  format: uuid
+                  example: e67a13d7-4cd1-45bc-9db0-1282937eb7df
+                assigneeId:
+                  type: string
+                  format: uuid
+                  example: 9d6bfb71-3baa-4192-8821-ee98c18ac766
+                dueDate:
+                  type: string
+                  format: date-time
+                  example: "2026-06-30T12:00:00.000Z"
+      responses:
+        '201':
+          description: Task created successfully
+        '400':
+          description: Validation error or assignee not registered project member
+        '401':
+          description: Missing or expired token
+        '403':
+          description: Forbidden
+        '404':
+          description: Target project not found
+
+    get:
+      summary: List tasks (ADMIN, MANAGER, MEMBER)
+      description: |
+        Returns a paginated list of tasks matching filters in the organization.
+        - **ADMIN/MANAGER**: Can see all tasks within their organization.
+        - **MEMBER**: Automatically restricted to seeing only tasks assigned directly to them.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [TODO, IN_PROGRESS, IN_REVIEW, DONE, BLOCKED]
+        - name: priority
+          in: query
+          schema:
+            type: string
+            enum: [LOW, MEDIUM, HIGH]
+        - name: assigneeId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: projectId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Tasks list fetched successfully
+        '401':
+          description: Missing or expired token
+
+  /tasks/{id}:
+    get:
+      summary: Get task details (ADMIN, MANAGER, MEMBER)
+      description: Returns task metadata, assignee details, and transition histories. Scoped to assignee for members.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Task details fetched successfully
+        '401':
+          description: Missing or expired token
+        '404':
+          description: Task not found
+
+    patch:
+      summary: Update task metadata (ADMIN and MANAGER only)
+      description: Partially updates task title, description, priority, assignee, and due date. Restricted to ADMIN/MANAGER.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  example: Refined Task Title
+                description:
+                  type: string
+                  example: Updated description details.
+                priority:
+                  type: string
+                  enum: [LOW, MEDIUM, HIGH]
+                assigneeId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                dueDate:
+                  type: string
+                  format: date-time
+                  nullable: true
+      responses:
+        '200':
+          description: Task metadata updated successfully
+        '400':
+          description: Validation error (e.g. past due_date)
+        '401':
+          description: Missing or expired token
+        '404':
+          description: Task not found
+
+    delete:
+      summary: Delete task (ADMIN and MANAGER only)
+      description: Removes the task from the organization workspace. Restricted to ADMIN/MANAGER.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Task deleted successfully
+        '401':
+          description: Missing or expired token
+        '404':
+          description: Task not found
+
+  /tasks/{id}/status:
+    patch:
+      summary: Transition task status (Assignee or MANAGER/ADMIN only)
+      description: |
+        Advances a task status through strict allowed transitions:
+        - `TODO -> IN_PROGRESS -> IN_REVIEW -> DRAFT`
+        - Any active state -> `BLOCKED`
+        - `BLOCKED` -> any active state
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [TODO, IN_PROGRESS, IN_REVIEW, DONE, BLOCKED]
+                  example: IN_PROGRESS
+      responses:
+        '200':
+          description: Task status successfully transitioned and audited
+        '400':
+          description: Invalid transition attempt
+        '401':
+          description: Missing or expired token
+        '403':
+          description: Forbidden status update (e.g. member updating unassigned task status)
+        '404':
+          description: Task not found
+
+  /notifications:
+    get:
+      summary: List persistent notifications (ADMIN, MANAGER, MEMBER)
+      description: Returns a paginated inbox list of the user's unread and read notifications.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Notifications inbox fetched successfully
+        '401':
+          description: Missing or expired token
+
+  /notifications/stream:
+    get:
+      summary: Subscribe to real-time notification stream (SSE)
+      description: Establishes a persistent Server-Sent Events stream to receive real-time notifications for task status updates.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Real-time stream successfully established
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          description: Missing or expired token
+
+  /notifications/{id}/read:
+    patch:
+      summary: Mark single notification as read (ADMIN, MANAGER, MEMBER)
+      description: Marks a specific persistent notification inbox record as read. Restricted to owner (BOLA guard).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Notification successfully marked as read
+        '401':
+          description: Missing or expired token
+        '403':
+          description: Forbidden notification access (BOLA check failed)
+        '404':
+          description: Notification not found
+
+  /notifications/read-all:
+    post:
+      summary: Mark all notifications as read (ADMIN, MANAGER, MEMBER)
+      description: Marks all persistent notification inbox records for the user as read.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: All notifications successfully marked as read
+        '401':
+          description: Missing or expired token
 
 components:
   securitySchemes:
