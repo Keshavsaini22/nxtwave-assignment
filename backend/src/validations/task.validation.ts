@@ -8,7 +8,10 @@ export const createTaskSchema = z.object({
     priority: z.nativeEnum(Priority).optional().default(Priority.LOW),
     projectId: z.string().uuid('Invalid project ID format'),
     assigneeId: z.string().uuid('Invalid assignee user ID format').optional(),
-    dueDate: z.string().datetime({ message: 'dueDate must be a valid ISO 8601 datetime string' }).optional().transform(val => val ? new Date(val) : undefined),
+    dueDate: z.string().datetime({ message: 'dueDate must be a valid ISO 8601 datetime string' }).optional().transform(val => val ? new Date(val) : undefined).refine(
+      (date) => !date || date.getTime() > Date.now(),
+      { message: 'due_date must be a future date' }
+    ),
   }),
 });
 
@@ -18,7 +21,10 @@ export const updateTaskSchema = z.object({
     description: z.string().trim().optional(),
     priority: z.nativeEnum(Priority).optional(),
     assigneeId: z.string().uuid('Invalid assignee user ID format').nullable().optional(),
-    dueDate: z.string().datetime({ message: 'dueDate must be a valid ISO 8601 datetime string' }).nullable().optional().transform(val => val ? new Date(val) : undefined),
+    dueDate: z.string().datetime({ message: 'dueDate must be a valid ISO 8601 datetime string' }).nullable().optional().transform(val => val ? new Date(val) : undefined).refine(
+      (date) => !date || date.getTime() > Date.now(),
+      { message: 'due_date must be a future date' }
+    ),
   }).refine(
     (data) => Object.keys(data).length > 0,
     { message: 'At least one field must be provided for task update' }

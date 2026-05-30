@@ -2,6 +2,7 @@ import prisma from '../config/prisma.js';
 import { Role, Task, TaskStatus, Priority } from '@prisma/client';
 import { AppError } from '../middlewares/error.middleware.js';
 import { TaskStateFactory } from './states/taskState.js';
+import { TaskCacheService } from './taskCache.service.js';
 
 export class TaskService {
   public static async createTask(
@@ -51,6 +52,10 @@ export class TaskService {
       },
     });
 
+    if (task.assigneeId) {
+      await TaskCacheService.invalidateAssigneeCache(task.assigneeId);
+    }
+
     return task;
   }
 
@@ -67,6 +72,15 @@ export class TaskService {
       projectId?: string;
     }
   ): Promise<{ items: Task[]; total: number }> {
+    const assigneeId = role === Role.MEMBER ? userId : filters.assigneeId;
+
+    if (assigneeId) {
+      const cached = await TaskCacheService.getTasksCache(assigneeId, filters);
+      if (cached) {
+        return cached;
+      }
+    }
+
     const skip = (filters.page - 1) * filters.limit;
 
     const whereClause: any = { organizationId: orgId };
@@ -105,7 +119,13 @@ export class TaskService {
       }),
     ]);
 
-    return { items: tasks, total };
+    const result = { items: tasks, total };
+
+    if (assigneeId) {
+      await TaskCacheService.setTasksCache(assigneeId, filters, result);
+    }
+
+    return result;
   }
 
   public static async getTask(
@@ -181,6 +201,9 @@ export class TaskService {
       }
     }
 
+    const oldAssigneeId = task.assigneeId;
+    const newAssigneeId = updates.assigneeId;
+
     const updatedTask = await prisma.task.update({
       where: { id: taskId },
       data: {
@@ -191,6 +214,13 @@ export class TaskService {
         ...(updates.dueDate !== undefined && { dueDate: updates.dueDate }),
       },
     });
+
+    if (oldAssigneeId) {
+      await TaskCacheService.invalidateAssigneeCache(oldAssigneeId);
+    }
+    if (newAssigneeId && newAssigneeId !== oldAssigneeId) {
+      await TaskCacheService.invalidateAssigneeCache(newAssigneeId);
+    }
 
     return updatedTask;
   }
@@ -222,21 +252,25 @@ export class TaskService {
     const [updatedTask] = await prisma.$transaction([
       prisma.task.update({
         where: { id: taskId },
-        data: {
+      	data: {
           status: newStatus,
           ...(newStatus === TaskStatus.DONE && { completedAt: new Date() }),
           ...(newStatus !== TaskStatus.DONE && { completedAt: null }),
-        },
+      	},
       }),
       prisma.taskStatusHistory.create({
-        data: {
+      	data: {
           taskId,
           userId,
           fromStatus: task.status,
           toStatus: newStatus,
-        },
+      	},
       }),
     ]);
+
+    if (updatedTask.assigneeId) {
+      await TaskCacheService.invalidateAssigneeCache(updatedTask.assigneeId);
+    }
 
     return updatedTask;
   }
@@ -253,5 +287,9 @@ export class TaskService {
     await prisma.task.delete({
       where: { id: taskId },
     });
+
+    if (task.assigneeId) {
+      await TaskCacheService.invalidateAssigneeCache(task.assigneeId);
+    }
   }
 }
