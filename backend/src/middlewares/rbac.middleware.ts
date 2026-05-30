@@ -10,6 +10,21 @@ const ROLE_PERMISSIONS: Record<string, Record<string, Role[]>> = {
   '/api/v1/users/:id': {
     'PATCH': [Role.ADMIN],
     'DELETE': [Role.ADMIN],
+  },
+  '/api/v1/projects': {
+    'POST': [Role.ADMIN, Role.MANAGER],
+    'GET': [Role.ADMIN, Role.MANAGER, Role.MEMBER],
+  },
+  '/api/v1/projects/:id': {
+    'GET': [Role.ADMIN, Role.MANAGER, Role.MEMBER],
+    'PATCH': [Role.ADMIN, Role.MANAGER],
+    'DELETE': [Role.ADMIN, Role.MANAGER],
+  },
+  '/api/v1/projects/:id/members': {
+    'POST': [Role.ADMIN, Role.MANAGER],
+  },
+  '/api/v1/projects/:id/members/:userId': {
+    'DELETE': [Role.ADMIN, Role.MANAGER],
   }
 };
 

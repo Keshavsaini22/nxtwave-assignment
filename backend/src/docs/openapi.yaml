@@ -362,6 +362,188 @@ paths:
         '404':
           description: User not found in this organization (BOLA guard)
 
+  /projects:
+    post:
+      summary: Create a new project (ADMIN and MANAGER only)
+      description: Creates a new project in the organization. Restricted to ADMIN/MANAGER.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  example: Alpha Migration Taskboard
+                description:
+                  type: string
+                  example: Project workspace tracking cloud migration tasks.
+      responses:
+        '201':
+          description: Project created successfully
+        '401':
+          description: Missing or expired token
+        '403':
+          description: Forbidden
+
+    get:
+      summary: List projects (ADMIN, MANAGER, MEMBER)
+      description: |
+        Returns a list of projects in the organization.
+        - **ADMIN/MANAGER**: Returns all projects in their organization.
+        - **MEMBER**: Returns only projects where they are registered members.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Projects list fetched successfully
+        '401':
+          description: Missing or expired token
+        '403':
+          description: Forbidden
+
+  /projects/{id}:
+    get:
+      summary: Get project details (ADMIN, MANAGER, MEMBER)
+      description: Returns the project details including assigned members. Scoped to membership for members (BOLA guard).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Project details fetched successfully
+        '401':
+          description: Missing or expired token
+        '404':
+          description: Project not found in organization
+
+    patch:
+      summary: Update project metadata (ADMIN and MANAGER only)
+      description: Updates the project name or description. Restricted to ADMIN/MANAGER.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: Beta Redesign Project
+                description:
+                  type: string
+                  example: Description update.
+      responses:
+        '200':
+          description: Project updated successfully
+        '401':
+          description: Missing or expired token
+        '404':
+          description: Project not found
+
+    delete:
+      summary: Delete project (ADMIN and MANAGER only)
+      description: Deletes the project from the organization. Restricted to ADMIN/MANAGER.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Project deleted successfully
+        '401':
+          description: Missing or expired token
+        '404':
+          description: Project not found
+
+  /projects/{id}/members:
+    post:
+      summary: Assign member to project (ADMIN and MANAGER only)
+      description: Assigns a user belonging strictly to the same organization to the project. Restricted to ADMIN/MANAGER.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - userId
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                  example: 9d6bfb71-3baa-4192-8821-ee98c18ac766
+      responses:
+        '201':
+          description: Member assigned successfully
+        '400':
+          description: Validation error
+        '401':
+          description: Missing or expired token
+        '404':
+          description: Project or target User not found inside organization (Cross-tenant block)
+
+  /projects/{id}/members/{userId}:
+    delete:
+      summary: Remove member from project (ADMIN and MANAGER only)
+      description: Removes a user from the project membership list. Restricted to ADMIN/MANAGER.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Member removed successfully
+        '401':
+          description: Missing or expired token
+        '404':
+          description: Project not found
+
 components:
   securitySchemes:
     bearerAuth:
