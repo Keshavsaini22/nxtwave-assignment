@@ -139,17 +139,14 @@ export class ProjectService {
     projectId: string,
     targetUserId: string
   ): Promise<void> {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-    });
+    const [project, user] = await Promise.all([
+      prisma.project.findUnique({ where: { id: projectId } }),
+      prisma.user.findUnique({ where: { id: targetUserId } }),
+    ]);
 
     if (!project || project.organizationId !== orgId) {
       throw new AppError('Project not found.', 404, 'PROJECT_NOT_FOUND');
     }
-
-    const user = await prisma.user.findUnique({
-      where: { id: targetUserId },
-    });
 
     if (!user || user.organizationId !== orgId) {
       throw new AppError('Target user not found in your organization.', 404, 'USER_NOT_FOUND');
