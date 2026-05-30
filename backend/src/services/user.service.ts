@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import prisma from '../config/prisma.js';
+import redis from '../config/redis.js';
 import { Role, User } from '@prisma/client';
 import { AppError } from '../middlewares/error.middleware.js';
 
@@ -36,13 +37,29 @@ export class UserService {
     return userWithoutPassword;
   }
 
-  public static async listUsers(adminOrgId: string): Promise<Array<Omit<User, 'passwordHash'>>> {
-    const users = await prisma.user.findMany({
-      where: { organizationId: adminOrgId },
-      orderBy: { createdAt: 'desc' },
-    });
+  public static async listUsers(
+    adminOrgId: string,
+    page: number,
+    limit: number
+  ): Promise<{ items: Array<Omit<User, 'passwordHash'>>; total: number }> {
+    const skip = (page - 1) * limit;
 
-    return users.map(({ passwordHash, ...user }) => user);
+    const [users, total] = await prisma.$transaction([
+      prisma.user.findMany({
+        where: { organizationId: adminOrgId },
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.user.count({
+        where: { organizationId: adminOrgId },
+      }),
+    ]);
+
+    return {
+      items: users.map(({ passwordHash, ...user }) => user),
+      total,
+    };
   }
 
   public static async updateUser(
@@ -71,6 +88,8 @@ export class UserService {
       },
     });
 
+    await redis.del(`user:${targetUserId}:status`);
+
     const { passwordHash: _, ...userWithoutPassword } = updatedUser;
     return userWithoutPassword;
   }
@@ -91,5 +110,7 @@ export class UserService {
     await prisma.user.delete({
       where: { id: targetUserId },
     });
+
+    await redis.del(`user:${targetUserId}:status`);
   }
 }

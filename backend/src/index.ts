@@ -51,9 +51,42 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 app.use(errorHandler);
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`====================================================`);
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`📝 Swagger Docs available at http://localhost:${PORT}/api-docs`);
   console.log(`====================================================`);
 });
+
+const gracefulShutdown = (signal: string) => {
+  console.log(`\n🛑 Received ${signal}. Initiating graceful shutdown...`);
+
+  server.close(async () => {
+    console.log('⚡ HTTP server successfully closed.');
+
+    try {
+      const { default: prisma } = await import('./config/prisma.js');
+      const { default: redis } = await import('./config/redis.js');
+
+      await prisma.$disconnect();
+      console.log('🔌 Prisma client connection disconnected.');
+
+      await redis.quit();
+      console.log('🔌 Redis client connection disconnected.');
+
+      console.log('👋 Graceful shutdown finalized successfully.');
+      process.exit(0);
+    } catch (error) {
+      console.error('💥 Error during graceful shutdown execution:', error);
+      process.exit(1);
+    }
+  });
+
+  setTimeout(() => {
+    console.error('⏰ Shutdown timed out. Forcing process exit.');
+    process.exit(1);
+  }, 10000);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

@@ -24,13 +24,23 @@ export class ProjectController {
       const orgId = req.user!.organizationId;
       const userId = req.user!.userId;
       const role = req.user!.role;
+      const page = req.query.page as unknown as number;
+      const limit = req.query.limit as unknown as number;
 
-      const projects = await ProjectService.listProjects(orgId, userId, role);
+      const { items, total } = await ProjectService.listProjects(orgId, userId, role, page, limit);
 
       res.status(200).json({
         status: 200,
-        message: 'Projects list fetched successfully.',
-        data: projects,
+        message: 'Projects fetched successfully.',
+        data: {
+          items,
+          meta: {
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+          },
+        },
       });
     } catch (error) {
       next(error);

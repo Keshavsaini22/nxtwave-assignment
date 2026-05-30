@@ -21,24 +21,50 @@ export class ProjectService {
   public static async listProjects(
     orgId: string,
     userId: string,
-    role: Role
-  ): Promise<Project[]> {
+    role: Role,
+    page: number,
+    limit: number
+  ): Promise<{ items: Project[]; total: number }> {
+    const skip = (page - 1) * limit;
+
     if (role === Role.ADMIN || role === Role.MANAGER) {
-      return prisma.project.findMany({
-        where: { organizationId: orgId },
-        orderBy: { createdAt: 'desc' },
-      });
+      const [projects, total] = await prisma.$transaction([
+        prisma.project.findMany({
+          where: { organizationId: orgId },
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+        }),
+        prisma.project.count({
+          where: { organizationId: orgId },
+        }),
+      ]);
+      return { items: projects, total };
     }
 
-    return prisma.project.findMany({
-      where: {
-        organizationId: orgId,
-        members: {
-          some: { id: userId },
+    const [projects, total] = await prisma.$transaction([
+      prisma.project.findMany({
+        where: {
+          organizationId: orgId,
+          members: {
+            some: { id: userId },
+          },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.project.count({
+        where: {
+          organizationId: orgId,
+          members: {
+            some: { id: userId },
+          },
+        },
+      }),
+    ]);
+
+    return { items: projects, total };
   }
 
   public static async getProject(

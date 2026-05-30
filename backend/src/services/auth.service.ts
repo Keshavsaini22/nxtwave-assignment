@@ -27,45 +27,47 @@ export class AuthService {
       throw new AppError('User registration failed. Email is already registered.', 409, 'EMAIL_EXISTS');
     }
 
-    let resolvedOrganizationId = '';
-
-    if (data.role === Role.ADMIN) {
-      if (!data.organizationName) {
-        throw new AppError('organizationName is required to register as an ADMIN and initialize an organization', 400, 'BAD_REQUEST');
-      }
-
-      const org = await prisma.organization.create({
-        data: { name: data.organizationName },
-      });
-      resolvedOrganizationId = org.id;
-    } else {
-      if (!data.organizationId) {
-        throw new AppError('organizationId is required to register as a MANAGER or MEMBER', 400, 'BAD_REQUEST');
-      }
-
-      const org = await prisma.organization.findUnique({
-        where: { id: data.organizationId },
-      });
-
-      if (!org) {
-        throw new AppError('Organization association failed. The requested organization ID does not exist.', 404, 'ORGANIZATION_NOT_FOUND');
-      }
-      resolvedOrganizationId = org.id;
-    }
-
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(data.password, salt);
 
-    const newUser = await prisma.user.create({
-      data: {
-        email: data.email,
-        passwordHash,
-        role: data.role,
-        organizationId: resolvedOrganizationId,
-      },
-    });
+    return prisma.$transaction(async (tx) => {
+      let resolvedOrganizationId = '';
 
-    return newUser;
+      if (data.role === Role.ADMIN) {
+        if (!data.organizationName) {
+          throw new AppError('organizationName is required to register as an ADMIN and initialize an organization', 400, 'BAD_REQUEST');
+        }
+
+        const org = await tx.organization.create({
+          data: { name: data.organizationName },
+        });
+        resolvedOrganizationId = org.id;
+      } else {
+        if (!data.organizationId) {
+          throw new AppError('organizationId is required to register as a MANAGER or MEMBER', 400, 'BAD_REQUEST');
+        }
+
+        const org = await tx.organization.findUnique({
+          where: { id: data.organizationId },
+        });
+
+        if (!org) {
+          throw new AppError('Organization association failed. The requested organization ID does not exist.', 404, 'ORGANIZATION_NOT_FOUND');
+        }
+        resolvedOrganizationId = org.id;
+      }
+
+      const newUser = await tx.user.create({
+        data: {
+          email: data.email,
+          passwordHash,
+          role: data.role,
+          organizationId: resolvedOrganizationId,
+        },
+      });
+
+      return newUser;
+    });
   }
 
   public static async login(data: {
@@ -131,10 +133,6 @@ export class AuthService {
       throw new AppError('Access session refresh failed. Refresh token is expired, revoked, or invalid.', 401, 'INVALID_SESSION');
     }
 
-    await prisma.refreshToken.delete({
-      where: { id: tokenRecord.id },
-    });
-
     const user = tokenRecord.user;
 
     if (user.isBlocked) {
@@ -147,13 +145,18 @@ export class AuthService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    await prisma.refreshToken.create({
-      data: {
-        token: refreshToken,
-        userId: user.id,
-        expiresAt,
-      },
-    });
+    await prisma.$transaction([
+      prisma.refreshToken.delete({
+        where: { id: tokenRecord.id },
+      }),
+      prisma.refreshToken.create({
+        data: {
+          token: refreshToken,
+          userId: user.id,
+          expiresAt,
+        },
+      }),
+    ]);
 
     return {
       accessToken,

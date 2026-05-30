@@ -2,8 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { Role } from '@prisma/client';
 import prisma from '../config/prisma.js';
+import redis from '../config/redis.js';
 import { AppError } from './error.middleware.js';
-import { UserPayload } from '../types/index.js';
 
 export const authenticateJWT = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const authHeader = req.headers.authorization;
@@ -24,17 +24,34 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
       return;
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: { isBlocked: true },
-    });
+    const cacheKey = `user:${decoded.userId}:status`;
+    const cachedStatus = await redis.get(cacheKey);
 
-    if (!user) {
-      next(new AppError('The authenticated user account no longer exists.', 401, 'UNAUTHORIZED', 'Unauthorized'));
-      return;
+    let isBlocked = false;
+
+    if (cachedStatus !== null) {
+      if (cachedStatus === 'DELETED') {
+        next(new AppError('The authenticated user account no longer exists.', 401, 'UNAUTHORIZED', 'Unauthorized'));
+        return;
+      }
+      isBlocked = cachedStatus === 'true';
+    } else {
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: { isBlocked: true },
+      });
+
+      if (!user) {
+        await redis.setex(cacheKey, 300, 'DELETED');
+        next(new AppError('The authenticated user account no longer exists.', 401, 'UNAUTHORIZED', 'Unauthorized'));
+        return;
+      }
+
+      isBlocked = user.isBlocked;
+      await redis.setex(cacheKey, 300, isBlocked ? 'true' : 'false');
     }
 
-    if (user.isBlocked) {
+    if (isBlocked) {
       next(new AppError('Your account has been suspended or blocked by an administrator.', 403, 'BLOCKED_USER', 'Account Suspended'));
       return;
     }

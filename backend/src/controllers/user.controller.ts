@@ -3,9 +3,6 @@ import { UserService } from '../services/user.service.js';
 import { Role } from '@prisma/client';
 
 export class UserController {
-  /**
-   * Provision a new tenant user
-   */
   public static async createUser(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const adminOrgId = req.user!.organizationId;
@@ -27,27 +24,32 @@ export class UserController {
     }
   }
 
-  /**
-   * List all users inside the organization
-   */
   public static async listUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const adminOrgId = req.user!.organizationId;
-      const users = await UserService.listUsers(adminOrgId);
+      const page = req.query.page as unknown as number;
+      const limit = req.query.limit as unknown as number;
+
+      const { items, total } = await UserService.listUsers(adminOrgId, page, limit);
 
       res.status(200).json({
         status: 200,
         message: 'Users fetched successfully.',
-        data: users,
+        data: {
+          items,
+          meta: {
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+          },
+        },
       });
     } catch (error) {
       next(error);
     }
   }
 
-  /**
-   * Update user details (role or block status)
-   */
   public static async updateUser(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const adminOrgId = req.user!.organizationId;
@@ -70,9 +72,6 @@ export class UserController {
     }
   }
 
-  /**
-   * Delete user from tenant organization
-   */
   public static async deleteUser(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const adminOrgId = req.user!.organizationId;
