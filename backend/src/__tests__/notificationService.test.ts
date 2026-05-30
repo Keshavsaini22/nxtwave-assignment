@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import type { AppError } from '../middlewares/error.middleware.js';
 
-const mockPrisma = {
+const mockPrismaInternal = {
   notification: {
     create: jest.fn(),
     findUnique: jest.fn(),
@@ -17,6 +17,33 @@ const mockPrisma = {
     return arg(mockPrisma);
   }),
 };
+
+const mockPrisma = new Proxy(mockPrismaInternal, {
+  get(target: any, prop: string | symbol) {
+    if (prop in target) {
+      return target[prop];
+    }
+    if (typeof prop === 'string') {
+      if (prop.startsWith('$')) {
+        return undefined;
+      }
+      target[prop] = {
+        create: jest.fn(),
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
+        findFirst: jest.fn(),
+        count: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+        delete: jest.fn(),
+        deleteMany: jest.fn(),
+        upsert: jest.fn(),
+      };
+      return target[prop];
+    }
+    return undefined;
+  }
+});
 
 const mockRedis = {
   publish: jest.fn(),

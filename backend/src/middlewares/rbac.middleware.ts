@@ -37,6 +37,9 @@ const ROLE_PERMISSIONS: Record<string, Record<string, Role[]>> = {
   },
   '/api/v1/tasks/:id/status': {
     'PATCH': [Role.ADMIN, Role.MANAGER, Role.MEMBER],
+  },
+  '/api/v1/analytics/tasks': {
+    'GET': [Role.ADMIN, Role.MANAGER],
   }
 };
 
