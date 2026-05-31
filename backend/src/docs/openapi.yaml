@@ -2,12 +2,12 @@ openapi: 3.0.3
 info:
   title: Team Task Tracker API
   description: |
-    Production-grade SDE-II REST API for a team-based task tracker.
+    REST API for a team-based task tracker.
     Features role-based access control (RBAC), multi-tenancy (organizations), 
     strict state transitions, JWT token rotation, caching, and robust error handling.
   version: 1.0.0
   contact:
-    name: SDE-II Candidate
+    name: API Team
 servers:
   - url: http://localhost:5000/api/v1
     description: Local Development Server

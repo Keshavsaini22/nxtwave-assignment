@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: task-tracker-frontend
+    restart: always
+    ports:
+      - "5173:80"

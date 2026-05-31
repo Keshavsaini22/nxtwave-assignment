@@ -2,7 +2,7 @@
   "name": "team-task-tracker-api",
   "version": "1.0.0",
   "type": "module",
-  "description": "SDE-II SDE Team Task Tracker API",
+  "description": "Team Task Tracker API",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",

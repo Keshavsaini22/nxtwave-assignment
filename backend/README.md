@@ -1,6 +1,6 @@
 # Team Task Tracker API - Backend
 
-This is the production-grade, highly structured SDE-II REST API backend for the **Team Task Tracker**.
+This is the REST API backend for the **Team Task Tracker**.
 
 ---
 
@@ -95,7 +95,7 @@ The database schema is designed inside [schema.prisma](file:///d:/MY%20PERSONAL%
 
 ---
 
-## ⚡ Database Index Decisions (SDE-II Optimization)
+## ⚡ Database Index Decisions
 
 To speed up `GET /tasks` queries and prevent high-overhead full-table scans, we implemented targeted Postgres indexes.
 
@@ -107,7 +107,7 @@ PostgreSQL B-Tree composite indexes can optimize query filters matching the left
 
 ---
 
-## ⚡ High-Performance Redis Caching (SDE-II Architecture)
+## ⚡ Redis Caching Strategy
 
 We built an ultra-fast, robust task-list caching engine per assignee that ensures complete database consistency.
 
@@ -157,13 +157,13 @@ To empower leadership with live organization-wide productivity metrics, we creat
 
 ---
 
-## 🧪 Elite Testing Discipline (32 passed, 32 total)
+## 🧪 Testing Suite (32 passed, 32 total)
 
-To demonstrate rigorous engineering discipline, we implemented an elite unit/integration test suite spanning **5 test suites** and **32 test cases** covering the entire business lifecycle.
+The project includes unit and integration tests covering the core business lifecycle.
 
 ### Highlights
-* **Advanced ESM Proxy Mocking**: Developed a dynamic ES module Proxy interceptor that encapsulates the Prisma Client. This completely solves Jest's `--runInBand` ESM module loader caching leak, dynamically instantiating mock models and their child properties (`findUnique`, `create`, etc.) on demand so that parallel test suites never experience cache collision failures.
-* **Faker & Object Mother Patterns**: Applied SDE-II test architectures utilizing the **Factory/Object Mother pattern** (`UserMother`, `TaskMother`, `OrganizationMother`) coupled with Faker to generate deterministic, highly readable mock payloads.
+* **Prisma Mocking**: Developed a mock provider for the Prisma Client to avoid parallel test suite interference.
+* **Faker & Object Mother Patterns**: Uses the **Factory/Object Mother pattern** (`UserMother`, `TaskMother`, `OrganizationMother`) coupled with Faker to generate deterministic, readable test payloads.
 * **AAA Assertions Structure**: All unit and integration test blocks adhere strictly to the **Arrange-Act-Assert** pattern.
 * **100% Code Coverage**: The Analytics Service achieves **100% statements, branches, and lines coverage** out-of-the-box.
 
@@ -188,7 +188,7 @@ npm run test:coverage
 
 ## 📁 Project Directory Layout
 
-The workspace is organized following SDE-II clean-architecture paradigms:
+The workspace is organized as follows:
 ```text
 backend/
 ├── src/
@@ -205,6 +205,6 @@ backend/
 ├── .env                    # System variables (ignored by Git)
 ├── .env.example            # Shared environment configuration template
 ├── tsconfig.json           # TypeScript build guidelines
-├── Dockerfile              # Production-grade multi-stage container
+├── Dockerfile              # Multi-stage container
 └── docker-compose.yml      # Multi-container service orchestrator
 ```
