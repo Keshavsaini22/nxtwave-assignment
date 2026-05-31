@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../store/index.js';
 import { logoutUser } from '../store/authSlice.js';
-import { LayoutGrid, Users as UsersIcon, BarChart3, LogOut, User as UserIcon, Building2, Copy, Briefcase } from 'lucide-react';
+import { ProjectService } from '../services/project.service.js';
+import type { Project } from '../types/project.types.js';
+import { Users as UsersIcon, BarChart3, LogOut, User as UserIcon, Building2, Copy, Briefcase, ChevronDown, ChevronRight, Settings } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: 'tasks' | 'users' | 'analytics' | 'projects';
@@ -12,7 +15,26 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, sidebarOpen }) => {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.auth.user);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const selectedProjectId = searchParams.get('projectId') || '';
+
   const [copied, setCopied] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsExpanded, setProjectsExpanded] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchProjects = async () => {
+      try {
+        const res = await ProjectService.listProjects(1, 100);
+        setProjects(res.items);
+      } catch (err) {
+      }
+    };
+    fetchProjects();
+  }, [user, location.pathname]);
 
   const handleCopyOrgId = () => {
     if (user?.organizationId) {
@@ -24,6 +46,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, sideb
 
   const handleLogout = () => {
     dispatch(logoutUser());
+  };
+
+  const handleProjectClick = (projectId: string) => {
+    setActiveTab('tasks');
+    navigate(`/tasks?projectId=${projectId}`);
+  };
+
+  const handleProjectTabClick = () => {
+    setActiveTab('projects');
+    setProjectsExpanded(!projectsExpanded);
+    navigate('/projects');
   };
 
   return (
@@ -137,56 +170,131 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, sideb
         </div>
       </div>
 
-      <nav style={{ padding: '20px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <button
-          onClick={() => setActiveTab('tasks')}
-          style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            padding: '12px 16px',
-            borderRadius: '8px',
-            border: 'none',
-            cursor: 'pointer',
-            fontWeight: 500,
-            fontSize: '0.95rem',
-            transition: 'var(--transition-fast)',
-            background: activeTab === 'tasks' ? 'hsl(var(--accent-violet) / 0.15)' : 'transparent',
-            color: activeTab === 'tasks' ? 'hsl(var(--text-primary))' : 'hsl(var(--text-secondary))',
-            borderLeft: activeTab === 'tasks' ? '3px solid hsl(var(--accent-violet))' : '3px solid transparent',
-            textAlign: 'left',
-          }}
-        >
-          <LayoutGrid size={18} /> Task Board
-        </button>
+      <nav style={{ padding: '20px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto' }}>
+        <div>
+          <button
+            onClick={handleProjectTabClick}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 500,
+              fontSize: '0.95rem',
+              transition: 'var(--transition-fast)',
+              background: activeTab === 'projects' ? 'hsl(var(--accent-violet) / 0.15)' : 'transparent',
+              color: activeTab === 'projects' ? 'hsl(var(--text-primary))' : 'hsl(var(--text-secondary))',
+              borderLeft: activeTab === 'projects' ? '3px solid hsl(var(--accent-violet))' : '3px solid transparent',
+              textAlign: 'left',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Briefcase size={18} /> Project Management
+            </div>
+            {projectsExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </button>
 
-        <button
-          onClick={() => setActiveTab('projects')}
-          style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            padding: '12px 16px',
-            borderRadius: '8px',
-            border: 'none',
-            cursor: 'pointer',
-            fontWeight: 500,
-            fontSize: '0.95rem',
-            transition: 'var(--transition-fast)',
-            background: activeTab === 'projects' ? 'hsl(var(--accent-violet) / 0.15)' : 'transparent',
-            color: activeTab === 'projects' ? 'hsl(var(--text-primary))' : 'hsl(var(--text-secondary))',
-            borderLeft: activeTab === 'projects' ? '3px solid hsl(var(--accent-violet))' : '3px solid transparent',
-            textAlign: 'left',
-          }}
-        >
-          <Briefcase size={18} /> Project Management
-        </button>
+          {projectsExpanded && (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+              paddingLeft: '32px',
+              marginTop: '4px',
+              borderLeft: '1px solid hsl(var(--card-border) / 0.3)',
+              marginLeft: '24px',
+            }}>
+              <button
+                onClick={() => {
+                  setActiveTab('projects');
+                  navigate('/projects');
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 500,
+                  fontSize: '0.85rem',
+                  transition: 'var(--transition-fast)',
+                  background: activeTab === 'projects' && !selectedProjectId ? 'hsl(var(--accent-violet) / 0.1)' : 'transparent',
+                  color: activeTab === 'projects' && !selectedProjectId ? 'white' : 'hsl(var(--text-secondary))',
+                  textAlign: 'left',
+                }}
+              >
+                <Settings size={14} style={{ opacity: 0.7 }} />
+                <span>Manage All Projects</span>
+              </button>
+
+              {projects.map((proj) => {
+                const isSelected = activeTab === 'tasks' && selectedProjectId === proj.id;
+                const dotColor = `hsl(${Math.abs(proj.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % 360}, 70%, 60%)`;
+                return (
+                  <button
+                    key={proj.id}
+                    onClick={() => handleProjectClick(proj.id)}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontWeight: isSelected ? 600 : 500,
+                      fontSize: '0.85rem',
+                      transition: 'var(--transition-fast)',
+                      background: isSelected ? 'hsl(var(--accent-violet) / 0.12)' : 'transparent',
+                      color: isSelected ? 'white' : 'hsl(var(--text-secondary))',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: dotColor,
+                      flexShrink: 0,
+                    }} />
+                    <span style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {proj.name}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {projects.length === 0 && (
+                <div style={{
+                  fontSize: '0.8rem',
+                  color: 'hsl(var(--text-muted))',
+                  padding: '8px 12px',
+                }}>
+                  No projects joined
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {user?.role === 'ADMIN' && (
           <button
-            onClick={() => setActiveTab('users')}
+            onClick={() => {
+              setActiveTab('users');
+              navigate('/users');
+            }}
             style={{
               width: '100%',
               display: 'flex',
@@ -211,7 +319,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, sideb
 
         {(user?.role === 'ADMIN' || user?.role === 'MANAGER') && (
           <button
-            onClick={() => setActiveTab('analytics')}
+            onClick={() => {
+              setActiveTab('analytics');
+              navigate('/analytics');
+            }}
             style={{
               width: '100%',
               display: 'flex',

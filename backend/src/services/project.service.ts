@@ -6,6 +6,7 @@ import { mapProjectToPublic, PublicProject } from '../utils/mappers.js';
 export class ProjectService {
   public static async createProject(
     orgId: string,
+    creatorUserId: string,
     data: { name: string; description?: string }
   ): Promise<PublicProject> {
     const org = await prisma.organization.findUnique({
@@ -16,13 +17,29 @@ export class ProjectService {
       throw new AppError('Organization not found.', 404, 'ORGANIZATION_NOT_FOUND');
     }
 
+    const creatorUser = await prisma.user.findUnique({
+      where: { uuid: creatorUserId },
+    });
+
+    if (!creatorUser) {
+      throw new AppError('Creator user not found.', 404, 'USER_NOT_FOUND');
+    }
+
     const project = await prisma.project.create({
       data: {
         name: data.name,
         description: data.description,
         organizationId: org.id,
+        members: {
+          connect: { id: creatorUser.id },
+        },
       },
-      include: { organization: true },
+      include: { 
+        organization: true,
+        members: {
+          include: { organization: true }
+        }
+      },
     });
 
     return mapProjectToPublic(project);
@@ -44,7 +61,12 @@ export class ProjectService {
           skip,
           take: limit,
           orderBy: { createdAt: 'desc' },
-          include: { organization: true },
+          include: { 
+            organization: true,
+            members: {
+              include: { organization: true }
+            }
+          },
         }),
         prisma.project.count({
           where: { organization: { uuid: orgId } },
@@ -64,7 +86,12 @@ export class ProjectService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: { organization: true },
+        include: { 
+          organization: true,
+          members: {
+            include: { organization: true }
+          }
+        },
       }),
       prisma.project.count({
         where: {

@@ -5,9 +5,10 @@ export class ProjectController {
   public static async createProject(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const orgId = req.user!.organizationId;
+      const creatorUserId = req.user!.userId;
       const { name, description } = req.body;
 
-      const project = await ProjectService.createProject(orgId, { name, description });
+      const project = await ProjectService.createProject(orgId, creatorUserId, { name, description });
 
       res.status(201).json({
         status: 201,

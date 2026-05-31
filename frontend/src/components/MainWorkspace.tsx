@@ -3,8 +3,9 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 import { useAppSelector } from '../store/index.js';
 import { Users } from '../pages/Users.js';
 import { Projects } from '../pages/Projects.js';
+import { Tasks } from '../pages/Tasks.js';
 import { Sidebar } from './Sidebar.js';
-import { DashboardPlaceholder, AnalyticsPlaceholder } from './Placeholders.js';
+import { AnalyticsPlaceholder } from './Placeholders.js';
 import { ShieldCheck, BellRing, Menu, X } from 'lucide-react';
 
 export const MainWorkspace: React.FC = () => {
@@ -96,7 +97,7 @@ export const MainWorkspace: React.FC = () => {
 
         <main style={{ flex: 1, overflowY: 'auto', background: 'transparent' }}>
           <Routes>
-            <Route path="/tasks" element={<DashboardPlaceholder />} />
+            <Route path="/tasks" element={<Tasks />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/users" element={user?.role === 'ADMIN' ? <Users /> : <Navigate to="/tasks" replace />} />
             <Route path="/analytics" element={(user?.role === 'ADMIN' || user?.role === 'MANAGER') ? <AnalyticsPlaceholder /> : <Navigate to="/tasks" replace />} />
