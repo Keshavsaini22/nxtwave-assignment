@@ -48,7 +48,10 @@ export const authorizeRBAC = (req: Request, res: Response, next: NextFunction): 
     throw new AppError('Authentication required.', 401, 'UNAUTHORIZED', 'Unauthorized');
   }
 
-  const routePath = `${req.baseUrl}${req.route?.path || ''}`;
+  let routePath = `${req.baseUrl}${req.route?.path || ''}`;
+  if (routePath.endsWith('/') && routePath.length > 1) {
+    routePath = routePath.slice(0, -1);
+  }
   const method = req.method;
   const allowedRoles = ROLE_PERMISSIONS[routePath]?.[method];
 

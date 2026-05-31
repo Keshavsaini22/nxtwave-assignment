@@ -37,11 +37,10 @@ paths:
 
   /auth/register:
     post:
-      summary: Register a new user
+      summary: Register a new administrator
       description: |
-        Create a new user account.
-        - **ADMIN role**: Requires `organizationName` to create a new organization.
-        - **MANAGER/MEMBER roles**: Requires `organizationId` of an existing organization.
+        Register a new ADMIN account and initialize a new organization.
+        Gated strictly to ADMIN workspace creators. Other staff members must be provisioned via the admin panel dashboard.
       requestBody:
         required: true
         content:
@@ -52,30 +51,26 @@ paths:
                 - email
                 - password
                 - role
+                - organizationName
               properties:
                 email:
                   type: string
                   format: email
-                  example: user@example.com
+                  example: admin@acme.com
                 password:
                   type: string
                   example: securepassword123
                 role:
                   type: string
-                  enum: [ADMIN, MANAGER, MEMBER]
-                  example: MEMBER
+                  enum: [ADMIN]
+                  example: ADMIN
                 organizationName:
                   type: string
-                  description: Required only if role is ADMIN
+                  description: The name of the organization to initialize
                   example: Acme Corporation
-                organizationId:
-                  type: string
-                  format: uuid
-                  description: Required only if role is MANAGER or MEMBER
-                  example: e67a13d7-4cd1-45bc-9db0-1282937eb7df
       responses:
         '201':
-          description: User registered successfully
+          description: Administrator and organization registered successfully
           content:
             application/json:
               schema:
@@ -86,7 +81,7 @@ paths:
                     example: 201
                   message:
                     type: string
-                    example: User registered successfully
+                    example: Administrator registered successfully
                   data:
                     type: object
                     properties:
@@ -96,16 +91,16 @@ paths:
                         example: 9d6bfb71-3baa-4192-8821-ee98c18ac766
                       email:
                         type: string
-                        example: user@example.com
+                        example: admin@acme.com
                       role:
                         type: string
-                        example: MEMBER
+                        example: ADMIN
                       organizationId:
                         type: string
                         format: uuid
                         example: e67a13d7-4cd1-45bc-9db0-1282937eb7df
         '400':
-          description: Validation error (e.g. missing organizationId for MEMBER)
+          description: Validation error
         '409':
           description: Conflict (e.g. email already exists)
 

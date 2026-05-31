@@ -5,6 +5,7 @@ import prisma from '../config/prisma.js';
 import { Role, User } from '@prisma/client';
 import { AppError } from '../middlewares/error.middleware.js';
 import { AuthSuccessPayload } from '../types/index.js';
+import { mapUserToPublic } from '../utils/mappers.js';
 
 export class AuthService {
   private static ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'supersecretaccesskeyfornxtwavetasktrackerapi123!';
@@ -31,31 +32,18 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(data.password, salt);
 
     return prisma.$transaction(async (tx) => {
-      let resolvedOrganizationId = '';
-
-      if (data.role === Role.ADMIN) {
-        if (!data.organizationName) {
-          throw new AppError('organizationName is required to register as an ADMIN and initialize an organization', 400, 'BAD_REQUEST');
-        }
-
-        const org = await tx.organization.create({
-          data: { name: data.organizationName },
-        });
-        resolvedOrganizationId = org.id;
-      } else {
-        if (!data.organizationId) {
-          throw new AppError('organizationId is required to register as a MANAGER or MEMBER', 400, 'BAD_REQUEST');
-        }
-
-        const org = await tx.organization.findUnique({
-          where: { id: data.organizationId },
-        });
-
-        if (!org) {
-          throw new AppError('Organization association failed. The requested organization ID does not exist.', 404, 'ORGANIZATION_NOT_FOUND');
-        }
-        resolvedOrganizationId = org.id;
+      if (data.role !== Role.ADMIN) {
+        throw new AppError('Self-registration is restricted strictly to ADMIN workspace creators', 400, 'BAD_REQUEST');
       }
+
+      if (!data.organizationName) {
+        throw new AppError('organizationName is required to register as an ADMIN and initialize an organization', 400, 'BAD_REQUEST');
+      }
+
+      const org = await tx.organization.create({
+        data: { name: data.organizationName },
+      });
+      const resolvedOrganizationId = org.id;
 
       const newUser = await tx.user.create({
         data: {
@@ -64,9 +52,10 @@ export class AuthService {
           role: data.role,
           organizationId: resolvedOrganizationId,
         },
+        include: { organization: true },
       });
 
-      return newUser;
+      return mapUserToPublic(newUser) as any;
     });
   }
 
@@ -76,6 +65,7 @@ export class AuthService {
   }): Promise<AuthSuccessPayload> {
     const user = await prisma.user.findUnique({
       where: { email: data.email },
+      include: { organization: true },
     });
 
     if (!user) {
@@ -107,10 +97,10 @@ export class AuthService {
 
     return {
       user: {
-        id: user.id,
+        id: user.uuid,
         email: user.email,
         role: user.role,
-        organizationId: user.organizationId,
+        organizationId: user.organization.uuid,
       },
       accessToken,
       refreshToken,
@@ -120,7 +110,7 @@ export class AuthService {
   public static async refreshSession(oldRefreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
     const tokenRecord = await prisma.refreshToken.findUnique({
       where: { token: oldRefreshToken },
-      include: { user: true },
+      include: { user: { include: { organization: true } } },
     });
 
     if (!tokenRecord || tokenRecord.isRevoked || tokenRecord.expiresAt < new Date()) {
@@ -173,13 +163,13 @@ export class AuthService {
     }
   }
 
-  private static generateAccessToken(user: User): string {
+  private static generateAccessToken(user: any): string {
     return jwt.sign(
       {
-        userId: user.id,
+        userId: user.uuid,
         email: user.email,
         role: user.role,
-        organizationId: user.organizationId,
+        organizationId: user.organization.uuid,
       },
       this.ACCESS_SECRET,
       { expiresIn: this.ACCESS_EXPIRY as any }

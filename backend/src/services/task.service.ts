@@ -1,9 +1,10 @@
 import prisma from '../config/prisma.js';
-import { Role, Task, TaskStatus, Priority } from '@prisma/client';
+import { Role, TaskStatus, Priority } from '@prisma/client';
 import { AppError } from '../middlewares/error.middleware.js';
 import { TaskStateFactory } from './states/taskState.js';
 import { TaskCacheService } from './taskCache.service.js';
 import { NotificationService } from './notification.service.js';
+import { mapTaskToPublic, PublicTask } from '../utils/mappers.js';
 
 export class TaskService {
   public static async createTask(
@@ -16,21 +17,41 @@ export class TaskService {
       assigneeId?: string;
       dueDate?: Date;
     }
-  ): Promise<Task> {
-    const project = await prisma.project.findUnique({
-      where: { id: data.projectId },
+  ): Promise<PublicTask> {
+    const org = await prisma.organization.findUnique({
+      where: { uuid: orgId },
     });
 
-    if (!project || project.organizationId !== orgId) {
+    if (!org) {
+      throw new AppError('Organization not found.', 404, 'ORGANIZATION_NOT_FOUND');
+    }
+
+    const project = await prisma.project.findUnique({
+      where: { uuid: data.projectId },
+    });
+
+    if (!project || project.organizationId !== org.id) {
       throw new AppError('Target project not found.', 404, 'PROJECT_NOT_FOUND');
     }
 
+    let resolvedAssigneeId: number | undefined = undefined;
+
     if (data.assigneeId) {
+      const user = await prisma.user.findUnique({
+        where: { uuid: data.assigneeId },
+      });
+
+      if (!user || user.organizationId !== org.id) {
+        throw new AppError('Assignee not found.', 404, 'USER_NOT_FOUND');
+      }
+
+      resolvedAssigneeId = user.id;
+
       const isMember = await prisma.project.count({
         where: {
-          id: data.projectId,
+          id: project.id,
           members: {
-            some: { id: data.assigneeId },
+            some: { id: user.id },
           },
         },
       });
@@ -45,19 +66,24 @@ export class TaskService {
         title: data.title,
         description: data.description,
         priority: data.priority,
-        projectId: data.projectId,
-        organizationId: orgId,
-        assigneeId: data.assigneeId,
+        projectId: project.id,
+        organizationId: org.id,
+        assigneeId: resolvedAssigneeId,
         dueDate: data.dueDate,
         status: TaskStatus.TODO,
       },
+      include: {
+        organization: true,
+        project: true,
+        assignee: true,
+      },
     });
 
-    if (task.assigneeId) {
-      await TaskCacheService.invalidateAssigneeCache(task.assigneeId);
+    if (data.assigneeId) {
+      await TaskCacheService.invalidateAssigneeCache(data.assigneeId);
     }
 
-    return task;
+    return mapTaskToPublic(task);
   }
 
   public static async listTasks(
@@ -72,7 +98,7 @@ export class TaskService {
       assigneeId?: string;
       projectId?: string;
     }
-  ): Promise<{ items: Task[]; total: number }> {
+  ): Promise<{ items: PublicTask[]; total: number }> {
     const assigneeId = role === Role.MEMBER ? userId : filters.assigneeId;
 
     if (assigneeId) {
@@ -83,14 +109,13 @@ export class TaskService {
     }
 
     const skip = (filters.page - 1) * filters.limit;
-
-    const whereClause: any = { organizationId: orgId };
+    const whereClause: any = { organization: { uuid: orgId } };
 
     if (role === Role.MEMBER) {
-      whereClause.assigneeId = userId;
+      whereClause.assignee = { uuid: userId };
     } else {
       if (filters.assigneeId) {
-        whereClause.assigneeId = filters.assigneeId;
+        whereClause.assignee = { uuid: filters.assigneeId };
       }
     }
 
@@ -101,7 +126,7 @@ export class TaskService {
       whereClause.priority = filters.priority;
     }
     if (filters.projectId) {
-      whereClause.projectId = filters.projectId;
+      whereClause.project = { uuid: filters.projectId };
     }
 
     const [tasks, total] = await prisma.$transaction([
@@ -111,8 +136,9 @@ export class TaskService {
         take: filters.limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          assignee: { select: { id: true, email: true, role: true } },
-          project: { select: { id: true, name: true } },
+          assignee: { include: { organization: true } },
+          project: { include: { organization: true } },
+          organization: true,
         },
       }),
       prisma.task.count({
@@ -120,7 +146,7 @@ export class TaskService {
       }),
     ]);
 
-    const result = { items: tasks, total };
+    const result = { items: tasks.map(mapTaskToPublic), total };
 
     if (assigneeId) {
       await TaskCacheService.setTasksCache(assigneeId, filters, result);
@@ -134,30 +160,31 @@ export class TaskService {
     userId: string,
     role: Role,
     taskId: string
-  ): Promise<Task> {
+  ): Promise<PublicTask> {
     const task = await prisma.task.findUnique({
-      where: { id: taskId },
+      where: { uuid: taskId },
       include: {
-        assignee: { select: { id: true, email: true, role: true } },
-        project: { select: { id: true, name: true } },
+        organization: true,
+        assignee: { include: { organization: true } },
+        project: { include: { organization: true } },
         statusHistory: {
           orderBy: { createdAt: 'desc' },
           include: {
-            user: { select: { id: true, email: true, role: true } },
+            user: { include: { organization: true } },
           },
         },
       },
     });
 
-    if (!task || task.organizationId !== orgId) {
+    if (!task || task.organization.uuid !== orgId) {
       throw new AppError('Task not found.', 404, 'TASK_NOT_FOUND');
     }
 
-    if (role === Role.MEMBER && task.assigneeId !== userId) {
+    if (role === Role.MEMBER && (!task.assignee || task.assignee.uuid !== userId)) {
       throw new AppError('Task not found.', 404, 'TASK_NOT_FOUND');
     }
 
-    return task;
+    return mapTaskToPublic(task);
   }
 
   public static async updateTask(
@@ -170,29 +197,35 @@ export class TaskService {
       assigneeId?: string | null;
       dueDate?: Date | null;
     }
-  ): Promise<Task> {
+  ): Promise<PublicTask> {
     const task = await prisma.task.findUnique({
-      where: { id: taskId },
+      where: { uuid: taskId },
+      include: { organization: true, assignee: true },
     });
 
-    if (!task || task.organizationId !== orgId) {
+    if (!task || task.organization.uuid !== orgId) {
       throw new AppError('Task not found.', 404, 'TASK_NOT_FOUND');
     }
 
+    let resolvedAssigneeId: number | null | undefined = undefined;
+
     if (updates.assigneeId) {
-      const project = await prisma.project.findUnique({
-        where: { id: task.projectId },
+      const user = await prisma.user.findUnique({
+        where: { uuid: updates.assigneeId },
+        include: { organization: true },
       });
 
-      if (!project || project.organizationId !== orgId) {
-        throw new AppError('Target project not found.', 404, 'PROJECT_NOT_FOUND');
+      if (!user || user.organization.uuid !== orgId) {
+        throw new AppError('Assignee not found in your organization.', 404, 'USER_NOT_FOUND');
       }
+
+      resolvedAssigneeId = user.id;
 
       const isMember = await prisma.project.count({
         where: {
           id: task.projectId,
           members: {
-            some: { id: updates.assigneeId },
+            some: { id: user.id },
           },
         },
       });
@@ -200,30 +233,37 @@ export class TaskService {
       if (isMember === 0) {
         throw new AppError('The assignee must be a registered member of this project.', 400, 'ASSIGNEE_NOT_MEMBER');
       }
+    } else if (updates.assigneeId === null) {
+      resolvedAssigneeId = null;
     }
 
-    const oldAssigneeId = task.assigneeId;
-    const newAssigneeId = updates.assigneeId;
+    const oldAssigneeUuid = task.assignee?.uuid;
+    const newAssigneeUuid = updates.assigneeId;
 
     const updatedTask = await prisma.task.update({
-      where: { id: taskId },
+      where: { id: task.id },
       data: {
         ...(updates.title !== undefined && { title: updates.title }),
         ...(updates.description !== undefined && { description: updates.description }),
         ...(updates.priority !== undefined && { priority: updates.priority }),
-        ...(updates.assigneeId !== undefined && { assigneeId: updates.assigneeId }),
+        ...(resolvedAssigneeId !== undefined && { assigneeId: resolvedAssigneeId }),
         ...(updates.dueDate !== undefined && { dueDate: updates.dueDate }),
+      },
+      include: {
+        organization: true,
+        project: true,
+        assignee: true,
       },
     });
 
-    if (oldAssigneeId) {
-      await TaskCacheService.invalidateAssigneeCache(oldAssigneeId);
+    if (oldAssigneeUuid) {
+      await TaskCacheService.invalidateAssigneeCache(oldAssigneeUuid);
     }
-    if (newAssigneeId && newAssigneeId !== oldAssigneeId) {
-      await TaskCacheService.invalidateAssigneeCache(newAssigneeId);
+    if (newAssigneeUuid && newAssigneeUuid !== oldAssigneeUuid) {
+      await TaskCacheService.invalidateAssigneeCache(newAssigneeUuid);
     }
 
-    return updatedTask;
+    return mapTaskToPublic(updatedTask);
   }
 
   public static async updateTaskStatus(
@@ -232,17 +272,26 @@ export class TaskService {
     role: Role,
     taskId: string,
     newStatus: TaskStatus
-  ): Promise<Task> {
+  ): Promise<PublicTask> {
     const task = await prisma.task.findUnique({
-      where: { id: taskId },
+      where: { uuid: taskId },
+      include: { organization: true, assignee: true },
     });
 
-    if (!task || task.organizationId !== orgId) {
+    if (!task || task.organization.uuid !== orgId) {
       throw new AppError('Task not found.', 404, 'TASK_NOT_FOUND');
     }
 
-    if (role === Role.MEMBER && task.assigneeId !== userId) {
+    if (role === Role.MEMBER && (!task.assignee || task.assignee.uuid !== userId)) {
       throw new AppError('Permission denied. You can only advance the status of tasks assigned to you.', 403, 'FORBIDDEN_TASK_STATUS_UPDATE');
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { uuid: userId },
+    });
+
+    if (!user) {
+      throw new AppError('User not found.', 404, 'USER_NOT_FOUND');
     }
 
     const currentState = TaskStateFactory.get(task.status);
@@ -252,50 +301,52 @@ export class TaskService {
 
     const [updatedTask] = await prisma.$transaction([
       prisma.task.update({
-        where: { id: taskId },
+        where: { id: task.id },
         data: {
           status: newStatus,
           ...(newStatus === TaskStatus.DONE && { completedAt: new Date() }),
           ...(newStatus !== TaskStatus.DONE && { completedAt: null }),
         },
+        include: { organization: true, project: true, assignee: true },
       }),
       prisma.taskStatusHistory.create({
         data: {
-          taskId,
-          userId,
+          taskId: task.id,
+          userId: user.id,
           fromStatus: task.status,
           toStatus: newStatus,
         },
       }),
     ]);
 
-    if (updatedTask.assigneeId) {
-      await TaskCacheService.invalidateAssigneeCache(updatedTask.assigneeId);
+    if (task.assignee?.uuid) {
+      await TaskCacheService.invalidateAssigneeCache(task.assignee.uuid);
       await NotificationService.createAndPublishNotification(
-        updatedTask.assigneeId,
+        task.assignee.uuid,
         'Task Status Updated',
         `Your task "${updatedTask.title}" has been updated from ${task.status} to ${updatedTask.status}.`
       );
     }
 
-    return updatedTask;
+    return mapTaskToPublic(updatedTask);
   }
 
   public static async deleteTask(orgId: string, taskId: string): Promise<void> {
     const task = await prisma.task.findUnique({
-      where: { id: taskId },
+      where: { uuid: taskId },
+      include: { organization: true, assignee: true },
     });
 
-    if (!task || task.organizationId !== orgId) {
+    if (!task || task.organization.uuid !== orgId) {
       throw new AppError('Task not found.', 404, 'TASK_NOT_FOUND');
     }
 
     await prisma.task.delete({
-      where: { id: taskId },
+      where: { id: task.id },
     });
 
-    if (task.assigneeId) {
-      await TaskCacheService.invalidateAssigneeCache(task.assigneeId);
+    if (task.assignee?.uuid) {
+      await TaskCacheService.invalidateAssigneeCache(task.assignee.uuid);
     }
   }
 }

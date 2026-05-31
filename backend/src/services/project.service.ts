@@ -1,21 +1,31 @@
 import prisma from '../config/prisma.js';
-import { Role, Project } from '@prisma/client';
+import { Role } from '@prisma/client';
 import { AppError } from '../middlewares/error.middleware.js';
+import { mapProjectToPublic, PublicProject } from '../utils/mappers.js';
 
 export class ProjectService {
   public static async createProject(
     orgId: string,
     data: { name: string; description?: string }
-  ): Promise<Project> {
+  ): Promise<PublicProject> {
+    const org = await prisma.organization.findUnique({
+      where: { uuid: orgId },
+    });
+
+    if (!org) {
+      throw new AppError('Organization not found.', 404, 'ORGANIZATION_NOT_FOUND');
+    }
+
     const project = await prisma.project.create({
       data: {
         name: data.name,
         description: data.description,
-        organizationId: orgId,
+        organizationId: org.id,
       },
+      include: { organization: true },
     });
 
-    return project;
+    return mapProjectToPublic(project);
   }
 
   public static async listProjects(
@@ -24,47 +34,49 @@ export class ProjectService {
     role: Role,
     page: number,
     limit: number
-  ): Promise<{ items: Project[]; total: number }> {
+  ): Promise<{ items: PublicProject[]; total: number }> {
     const skip = (page - 1) * limit;
 
     if (role === Role.ADMIN || role === Role.MANAGER) {
       const [projects, total] = await prisma.$transaction([
         prisma.project.findMany({
-          where: { organizationId: orgId },
+          where: { organization: { uuid: orgId } },
           skip,
           take: limit,
           orderBy: { createdAt: 'desc' },
+          include: { organization: true },
         }),
         prisma.project.count({
-          where: { organizationId: orgId },
+          where: { organization: { uuid: orgId } },
         }),
       ]);
-      return { items: projects, total };
+      return { items: projects.map(mapProjectToPublic), total };
     }
 
     const [projects, total] = await prisma.$transaction([
       prisma.project.findMany({
         where: {
-          organizationId: orgId,
+          organization: { uuid: orgId },
           members: {
-            some: { id: userId },
+            some: { uuid: userId },
           },
         },
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        include: { organization: true },
       }),
       prisma.project.count({
         where: {
-          organizationId: orgId,
+          organization: { uuid: orgId },
           members: {
-            some: { id: userId },
+            some: { uuid: userId },
           },
         },
       }),
     ]);
 
-    return { items: projects, total };
+    return { items: projects.map(mapProjectToPublic), total };
   }
 
   public static async getProject(
@@ -72,65 +84,69 @@ export class ProjectService {
     userId: string,
     role: Role,
     projectId: string
-  ): Promise<Project & { members: Array<{ id: string; email: string; role: Role }> }> {
+  ): Promise<PublicProject> {
     const project = await prisma.project.findUnique({
-      where: { id: projectId },
+      where: { uuid: projectId },
       include: {
+        organization: true,
         members: {
-          select: { id: true, email: true, role: true },
+          include: { organization: true },
         },
       },
     });
 
-    if (!project || project.organizationId !== orgId) {
+    if (!project || project.organization.uuid !== orgId) {
       throw new AppError('Project not found.', 404, 'PROJECT_NOT_FOUND');
     }
 
     if (role === Role.MEMBER) {
-      const isMember = project.members.some((m) => m.id === userId);
+      const isMember = project.members.some((m) => m.uuid === userId);
       if (!isMember) {
         throw new AppError('Project not found.', 404, 'PROJECT_NOT_FOUND');
       }
     }
 
-    return project;
+    return mapProjectToPublic(project);
   }
 
   public static async updateProject(
     orgId: string,
     projectId: string,
     updates: { name?: string; description?: string }
-  ): Promise<Project> {
+  ): Promise<PublicProject> {
     const project = await prisma.project.findUnique({
-      where: { id: projectId },
+      where: { uuid: projectId },
+      include: { organization: true },
     });
 
-    if (!project || project.organizationId !== orgId) {
+    if (!project || project.organization.uuid !== orgId) {
       throw new AppError('Project not found.', 404, 'PROJECT_NOT_FOUND');
     }
 
     const updated = await prisma.project.update({
-      where: { id: projectId },
+      where: { id: project.id },
       data: {
         ...(updates.name && { name: updates.name }),
         ...(updates.description !== undefined && { description: updates.description }),
       },
+      include: { organization: true },
     });
 
-    return updated;
+    return mapProjectToPublic(updated);
   }
 
   public static async deleteProject(orgId: string, projectId: string): Promise<void> {
     const project = await prisma.project.findUnique({
-      where: { id: projectId },
+      where: { uuid: projectId },
+      include: { organization: true },
     });
 
-    if (!project || project.organizationId !== orgId) {
+    if (!project || project.organization.uuid !== orgId) {
       throw new AppError('Project not found.', 404, 'PROJECT_NOT_FOUND');
     }
 
     await prisma.project.delete({
-      where: { id: projectId },
+      where: { id: project.id },
     });
   }
 
@@ -140,23 +156,23 @@ export class ProjectService {
     targetUserId: string
   ): Promise<void> {
     const [project, user] = await Promise.all([
-      prisma.project.findUnique({ where: { id: projectId } }),
-      prisma.user.findUnique({ where: { id: targetUserId } }),
+      prisma.project.findUnique({ where: { uuid: projectId }, include: { organization: true } }),
+      prisma.user.findUnique({ where: { uuid: targetUserId }, include: { organization: true } }),
     ]);
 
-    if (!project || project.organizationId !== orgId) {
+    if (!project || project.organization.uuid !== orgId) {
       throw new AppError('Project not found.', 404, 'PROJECT_NOT_FOUND');
     }
 
-    if (!user || user.organizationId !== orgId) {
+    if (!user || user.organization.uuid !== orgId) {
       throw new AppError('Target user not found in your organization.', 404, 'USER_NOT_FOUND');
     }
 
     await prisma.project.update({
-      where: { id: projectId },
+      where: { id: project.id },
       data: {
         members: {
-          connect: { id: targetUserId },
+          connect: { id: user.id },
         },
       },
     });
@@ -167,19 +183,24 @@ export class ProjectService {
     projectId: string,
     targetUserId: string
   ): Promise<void> {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-    });
+    const [project, user] = await Promise.all([
+      prisma.project.findUnique({ where: { uuid: projectId }, include: { organization: true } }),
+      prisma.user.findUnique({ where: { uuid: targetUserId } }),
+    ]);
 
-    if (!project || project.organizationId !== orgId) {
+    if (!project || project.organization.uuid !== orgId) {
       throw new AppError('Project not found.', 404, 'PROJECT_NOT_FOUND');
     }
 
+    if (!user) {
+      throw new AppError('Target user not found.', 404, 'USER_NOT_FOUND');
+    }
+
     await prisma.project.update({
-      where: { id: projectId },
+      where: { id: project.id },
       data: {
         members: {
-          disconnect: { id: targetUserId },
+          disconnect: { id: user.id },
         },
       },
     });

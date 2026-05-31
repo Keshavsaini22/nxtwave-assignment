@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: postgres_secure_password
       POSTGRES_DB: task_tracker
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -37,16 +37,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      # Target builder stage containing all devDependencies for hot-reloading
       target: builder
     container_name: task-tracker-api
     restart: always
     ports:
       - "5000:5000"
     volumes:
-      # Mount workspace for live hot-reloading
       - .:/app
-      # Preserve container's devDependencies node_modules
       - /app/node_modules
     command: sh -c "npx prisma generate && npx prisma db push && npm run dev"
     environment:

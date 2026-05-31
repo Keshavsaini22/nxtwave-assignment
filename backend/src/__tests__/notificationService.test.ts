@@ -1,32 +1,17 @@
 import { jest } from '@jest/globals';
-import type { AppError } from '../middlewares/error.middleware.js';
+import { AppError } from '../middlewares/error.middleware.js';
 
-const mockPrismaInternal = {
-  notification: {
-    create: jest.fn(),
-    findUnique: jest.fn(),
-    findMany: jest.fn(),
-    count: jest.fn(),
-    update: jest.fn(),
-    updateMany: jest.fn(),
-  },
-  $transaction: jest.fn((arg: any) => {
-    if (Array.isArray(arg)) {
-      return Promise.all(arg);
+const mockPrisma: any = new Proxy({}, {
+  get: (target: any, prop: string) => {
+    if (prop === '$transaction') {
+      return async (arg: any) => {
+        if (Array.isArray(arg)) {
+          return Promise.all(arg);
+        }
+        return arg(mockPrisma);
+      };
     }
-    return arg(mockPrisma);
-  }),
-};
-
-const mockPrisma = new Proxy(mockPrismaInternal, {
-  get(target: any, prop: string | symbol) {
-    if (prop in target) {
-      return target[prop];
-    }
-    if (typeof prop === 'string') {
-      if (prop.startsWith('$')) {
-        return undefined;
-      }
+    if (!(prop in target)) {
       target[prop] = {
         create: jest.fn(),
         findUnique: jest.fn(),
@@ -41,7 +26,7 @@ const mockPrisma = new Proxy(mockPrismaInternal, {
       };
       return target[prop];
     }
-    return undefined;
+    return target[prop];
   }
 });
 
@@ -74,7 +59,8 @@ describe('NotificationService Critical Workflows', () => {
     it('should successfully save notification and publish event via Redis Pub/Sub', async () => {
       const user = UserMother.createMember();
       const mockNotification = {
-        id: 'notif-1',
+        id: 1,
+        uuid: 'notif-1',
         userId: user.id,
         title: 'Task Assigned',
         message: 'A new task has been assigned to you.',
@@ -82,16 +68,24 @@ describe('NotificationService Critical Workflows', () => {
         createdAt: new Date(),
       };
 
+      (prisma.user.findUnique as any).mockResolvedValue(user);
       (prisma.notification.create as any).mockResolvedValue(mockNotification);
       (redis.publish as any).mockResolvedValue(1);
 
       const result = await NotificationService.createAndPublishNotification(
-        user.id,
+        user.uuid,
         'Task Assigned',
         'A new task has been assigned to you.'
       );
 
-      expect(result).toEqual(mockNotification);
+      expect(result).toEqual({
+        id: 'notif-1',
+        title: 'Task Assigned',
+        message: 'A new task has been assigned to you.',
+        isRead: false,
+        createdAt: mockNotification.createdAt,
+      });
+
       expect(prisma.notification.create).toHaveBeenCalledWith({
         data: {
           userId: user.id,
@@ -99,8 +93,9 @@ describe('NotificationService Critical Workflows', () => {
           message: 'A new task has been assigned to you.',
         },
       });
+
       expect(redis.publish).toHaveBeenCalledWith(
-        `notifications:user:${user.id}`,
+        `notifications:user:${user.uuid}`,
         expect.stringContaining('notif-1')
       );
     });
@@ -111,7 +106,8 @@ describe('NotificationService Critical Workflows', () => {
       const user = UserMother.createMember();
       const mockNotifications = [
         {
-          id: 'notif-1',
+          id: 1,
+          uuid: 'notif-1',
           userId: user.id,
           title: 'First Notif',
           message: 'Message 1',
@@ -123,13 +119,19 @@ describe('NotificationService Critical Workflows', () => {
       (prisma.notification.findMany as any).mockResolvedValue(mockNotifications);
       (prisma.notification.count as any).mockResolvedValue(1);
 
-      const result = await NotificationService.getUserNotifications(user.id, 1, 10);
+      const result = await NotificationService.getUserNotifications(user.uuid, 1, 10);
 
-      expect(result.items).toEqual(mockNotifications);
+      expect(result.items).toEqual([{
+        id: 'notif-1',
+        title: 'First Notif',
+        message: 'Message 1',
+        isRead: false,
+        createdAt: mockNotifications[0].createdAt,
+      }]);
       expect(result.total).toBe(1);
       expect(result.totalPages).toBe(1);
       expect(prisma.notification.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: { userId: user.id },
+        where: { user: { uuid: user.uuid } },
         skip: 0,
         take: 10,
       }));
@@ -143,7 +145,7 @@ describe('NotificationService Critical Workflows', () => {
 
       let thrownError: AppError | null = null;
       try {
-        await NotificationService.markAsRead(user.id, 'notif-missing');
+        await NotificationService.markAsRead(user.uuid, 'notif-missing');
       } catch (error: any) {
         thrownError = error;
       }
@@ -154,11 +156,13 @@ describe('NotificationService Critical Workflows', () => {
     });
 
     it('should throw an error if the user tries to mark someone else\'s notification as read', async () => {
-      const user1 = UserMother.createMember({ id: 'user-1' });
-      const user2 = UserMother.createMember({ id: 'user-2' });
+      const user1 = UserMother.createMember({ id: 1, uuid: 'user-1' });
+      const user2 = UserMother.createMember({ id: 2, uuid: 'user-2' });
       const mockNotification = {
-        id: 'notif-1',
+        id: 1,
+        uuid: 'notif-1',
         userId: user2.id,
+        user: user2,
         title: 'Private Notif',
         message: 'Secret',
         isRead: false,
@@ -169,7 +173,7 @@ describe('NotificationService Critical Workflows', () => {
 
       let thrownError: AppError | null = null;
       try {
-        await NotificationService.markAsRead(user1.id, 'notif-1');
+        await NotificationService.markAsRead(user1.uuid, 'notif-1');
       } catch (error: any) {
         thrownError = error;
       }
@@ -182,8 +186,10 @@ describe('NotificationService Critical Workflows', () => {
     it('should successfully update isRead to true when parameters and ownership are valid', async () => {
       const user = UserMother.createMember();
       const mockNotification = {
-        id: 'notif-1',
+        id: 1,
+        uuid: 'notif-1',
         userId: user.id,
+        user: user,
         title: 'Task Assigned',
         message: 'Message',
         isRead: false,
@@ -194,11 +200,11 @@ describe('NotificationService Critical Workflows', () => {
       (prisma.notification.findUnique as any).mockResolvedValue(mockNotification);
       (prisma.notification.update as any).mockResolvedValue(expectedUpdated);
 
-      const result = await NotificationService.markAsRead(user.id, 'notif-1');
+      const result = await NotificationService.markAsRead(user.uuid, 'notif-1');
 
       expect(result.isRead).toBe(true);
       expect(prisma.notification.update).toHaveBeenCalledWith({
-        where: { id: 'notif-1' },
+        where: { id: 1 },
         data: { isRead: true },
       });
     });
@@ -207,9 +213,10 @@ describe('NotificationService Critical Workflows', () => {
   describe('markAllAsRead', () => {
     it('should update all unread notifications to read for the given user', async () => {
       const user = UserMother.createMember();
+      (prisma.user.findUnique as any).mockResolvedValue(user);
       (prisma.notification.updateMany as any).mockResolvedValue({ count: 5 });
 
-      await NotificationService.markAllAsRead(user.id);
+      await NotificationService.markAllAsRead(user.uuid);
 
       expect(prisma.notification.updateMany).toHaveBeenCalledWith({
         where: { userId: user.id, isRead: false },

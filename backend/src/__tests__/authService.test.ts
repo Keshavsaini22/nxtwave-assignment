@@ -61,7 +61,7 @@ describe('AuthService Critical Flow - Refresh Session & Replay Attack Protection
   });
 
   it('should successfully rotate tokens in a transaction when refresh token is valid', async () => {
-    const user = UserMother.createMember();
+    const user = { ...UserMother.createMember(), organization: { uuid: 'org-uuid-1' } };
     const oldToken = 'valid-refresh-token';
     const mockExpiresAt = new Date();
     mockExpiresAt.setDate(mockExpiresAt.getDate() + 1);
@@ -96,7 +96,7 @@ describe('AuthService Critical Flow - Refresh Session & Replay Attack Protection
   });
 
   it('should detect replay attack and revoke all tokens when token is already revoked', async () => {
-    const user = UserMother.createMember();
+    const user = { ...UserMother.createMember(), organization: { uuid: 'org-uuid-2' } };
     const oldToken = 'revoked-refresh-token';
     const mockExpiresAt = new Date();
     mockExpiresAt.setDate(mockExpiresAt.getDate() + 1);
@@ -127,7 +127,7 @@ describe('AuthService Critical Flow - Refresh Session & Replay Attack Protection
   });
 
   it('should detect reuse and revoke all tokens when token is expired', async () => {
-    const user = UserMother.createMember();
+    const user = { ...UserMother.createMember(), organization: { uuid: 'org-uuid-3' } };
     const oldToken = 'expired-refresh-token';
     const mockExpiresAt = new Date();
     mockExpiresAt.setDate(mockExpiresAt.getDate() - 1);
@@ -158,7 +158,7 @@ describe('AuthService Critical Flow - Refresh Session & Replay Attack Protection
   });
 
   it('should reject refresh session if the user account has been blocked', async () => {
-    const user = UserMother.createMember({ isBlocked: true });
+    const user = { ...UserMother.createMember({ isBlocked: true }), organization: { uuid: 'org-uuid-4' } };
     const oldToken = 'valid-refresh-token-blocked-user';
     const mockExpiresAt = new Date();
     mockExpiresAt.setDate(mockExpiresAt.getDate() + 1);

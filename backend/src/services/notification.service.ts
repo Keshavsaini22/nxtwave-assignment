@@ -2,7 +2,6 @@ import { Response } from 'express';
 import { Redis } from 'ioredis';
 import { redis } from '../config/redis.js';
 import prisma from '../config/prisma.js';
-import { Notification } from '@prisma/client';
 import { AppError } from '../middlewares/error.middleware.js';
 
 export class NotificationService {
@@ -39,10 +38,18 @@ export class NotificationService {
     userId: string,
     title: string,
     message: string
-  ): Promise<Notification> {
+  ): Promise<any> {
+    const user = await prisma.user.findUnique({
+      where: { uuid: userId },
+    });
+
+    if (!user) {
+      throw new AppError('User not found.', 404, 'USER_NOT_FOUND');
+    }
+
     const notification = await prisma.notification.create({
       data: {
-        userId,
+        userId: user.id,
         title,
         message,
       },
@@ -50,7 +57,7 @@ export class NotificationService {
 
     const channel = `notifications:user:${userId}`;
     const payload = JSON.stringify({
-      id: notification.id,
+      id: notification.uuid,
       title: notification.title,
       message: notification.message,
       isRead: notification.isRead,
@@ -59,59 +66,90 @@ export class NotificationService {
 
     await redis.publish(channel, payload);
 
-    return notification;
+    return {
+      id: notification.uuid,
+      title: notification.title,
+      message: notification.message,
+      isRead: notification.isRead,
+      createdAt: notification.createdAt,
+    };
   }
 
   public static async getUserNotifications(
     userId: string,
     page: number,
     limit: number
-  ): Promise<{ items: Notification[]; total: number; totalPages: number }> {
+  ): Promise<{ items: any[]; total: number; totalPages: number }> {
     const skip = (page - 1) * limit;
 
     const [items, total] = await prisma.$transaction([
       prisma.notification.findMany({
-        where: { userId },
+        where: { user: { uuid: userId } },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
       }),
       prisma.notification.count({
-        where: { userId },
+        where: { user: { uuid: userId } },
       }),
     ]);
 
     const totalPages = Math.ceil(total / limit);
 
+    const mappedItems = items.map((notif) => ({
+      id: notif.uuid,
+      title: notif.title,
+      message: notif.message,
+      isRead: notif.isRead,
+      createdAt: notif.createdAt,
+    }));
+
     return {
-      items,
+      items: mappedItems,
       total,
       totalPages,
     };
   }
 
-  public static async markAsRead(userId: string, notificationId: string): Promise<Notification> {
+  public static async markAsRead(userId: string, notificationId: string): Promise<any> {
     const notification = await prisma.notification.findUnique({
-      where: { id: notificationId },
+      where: { uuid: notificationId },
+      include: { user: true },
     });
 
     if (!notification) {
       throw new AppError('Notification not found.', 404, 'NOTIFICATION_NOT_FOUND');
     }
 
-    if (notification.userId !== userId) {
+    if (notification.user.uuid !== userId) {
       throw new AppError('Access denied. You cannot modify notifications that do not belong to you.', 403, 'FORBIDDEN_NOTIFICATION_ACCESS');
     }
 
-    return prisma.notification.update({
-      where: { id: notificationId },
+    const updated = await prisma.notification.update({
+      where: { id: notification.id },
       data: { isRead: true },
     });
+
+    return {
+      id: updated.uuid,
+      title: updated.title,
+      message: updated.message,
+      isRead: updated.isRead,
+      createdAt: updated.createdAt,
+    };
   }
 
   public static async markAllAsRead(userId: string): Promise<void> {
+    const user = await prisma.user.findUnique({
+      where: { uuid: userId },
+    });
+
+    if (!user) {
+      throw new AppError('User not found.', 404, 'USER_NOT_FOUND');
+    }
+
     await prisma.notification.updateMany({
-      where: { userId, isRead: false },
+      where: { userId: user.id, isRead: false },
       data: { isRead: true },
     });
   }

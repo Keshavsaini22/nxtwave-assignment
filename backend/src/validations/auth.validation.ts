@@ -4,27 +4,10 @@ export const registerSchema = z.object({
   body: z.object({
     email: z.string().email('Invalid email address format'),
     password: z.string().min(8, 'Password must be at least 8 characters long'),
-    role: z.enum(['ADMIN', 'MANAGER', 'MEMBER'], {
-      errorMap: () => ({ message: 'Role must be one of ADMIN, MANAGER, or MEMBER' }),
+    role: z.literal('ADMIN', {
+      errorMap: () => ({ message: 'Self-registration is restricted strictly to ADMIN workspace creators' }),
     }),
-    organizationName: z.string().trim().min(2, 'Organization name must be at least 2 characters').optional(),
-    organizationId: z.string().uuid('Invalid organization ID format').optional(),
-  }).refine((data) => {
-    if (data.role === 'ADMIN') {
-      return !!data.organizationName;
-    }
-    return true;
-  }, {
-    message: 'organizationName is required when registering as an ADMIN',
-    path: ['organizationName'],
-  }).refine((data) => {
-    if (data.role === 'MANAGER' || data.role === 'MEMBER') {
-      return !!data.organizationId;
-    }
-    return true;
-  }, {
-    message: 'organizationId is required when registering as a MANAGER or MEMBER to join an organization',
-    path: ['organizationId'],
+    organizationName: z.string().trim().min(2, 'Organization name must be at least 2 characters'),
   })
 });
 

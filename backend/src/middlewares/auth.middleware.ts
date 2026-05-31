@@ -37,7 +37,7 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
       isBlocked = cachedStatus === 'true';
     } else {
       const user = await prisma.user.findUnique({
-        where: { id: decoded.userId },
+        where: { uuid: decoded.userId },
         select: { isBlocked: true },
       });
 
